@@ -1,9 +1,9 @@
 console.log('API配置管理器扩展文件开始加载...');
 
-import { extension_settings, renderExtensionTemplateAsync } from '../extensions.js';
-import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders } from '../../script.js';
-import { SECRET_KEYS, writeSecret, findSecret, secret_state } from '../secrets.js';
-import { oai_settings } from '../openai.js';
+import { extension_settings, renderExtensionTemplateAsync } from '../../extensions.js';
+import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders } from '../../../script.js';
+import { SECRET_KEYS, writeSecret, findSecret, secret_state } from '../../secrets.js';
+import { oai_settings } from '../../openai.js';
 
 console.log('API配置管理器扩展导入完成');
 
@@ -321,8 +321,41 @@ async function createUI() {
     console.log('开始创建UI...');
 
     try {
-        const settingsHtml = await renderExtensionTemplateAsync(MODULE_NAME, 'settings');
-        console.log('模板已加载:', settingsHtml);
+        // 直接使用内联HTML而不是模板文件
+        const settingsHtml = `
+            <div class="api_config_settings">
+                <div class="inline-drawer">
+                    <div class="inline-drawer-toggle inline-drawer-header">
+                        <b>API配置管理器</b>
+                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                    </div>
+                    <div class="inline-drawer-content">
+                        <div class="api-config-section">
+                            <h4>添加新配置</h4>
+                            <div class="flex-container flexFlowColumn flexGap5">
+                                <input type="text" id="api-config-name" placeholder="配置名称 (例如: OpenAI GPT-4)" class="text_pole">
+                                <input type="text" id="api-config-url" placeholder="API URL (例如: https://api.openai.com/v1)" class="text_pole">
+                                <input type="password" id="api-config-key" placeholder="API密钥" class="text_pole">
+                                <div class="flex-container flexGap5">
+                                    <input type="text" id="api-config-model" placeholder="首选模型 (可选，例如: gpt-4)" class="text_pole" style="flex: 1;">
+                                    <button id="api-config-fetch-models" class="menu_button" style="white-space: nowrap;">获取模型</button>
+                                </div>
+                                <select id="api-config-model-select" class="text_pole" style="display: none;">
+                                    <option value="">选择模型...</option>
+                                </select>
+                                <button id="api-config-save" class="menu_button">保存配置</button>
+                            </div>
+                            <small>输入配置信息，可以手动输入模型名或点击"获取模型"从API获取可用模型列表</small>
+                        </div>
+                        <div class="api-config-section">
+                            <h4>已保存的配置</h4>
+                            <div id="api-config-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        console.log('HTML已生成');
 
         // 首先尝试添加到API连接界面（自定义API部分）
         const customApiForm = $('#custom_form');
