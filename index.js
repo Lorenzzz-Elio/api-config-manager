@@ -1,10 +1,9 @@
 console.log('API配置管理器扩展文件开始加载...');
 
 import { extension_settings, renderExtensionTemplateAsync } from '../../extensions.js';
-import { eventSource, event_types, saveSettingsDebounced } from '../../../script.js';
+import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders } from '../../../script.js';
 import { SECRET_KEYS, writeSecret, findSecret, secret_state } from '../../secrets.js';
 import { oai_settings } from '../../openai.js';
-import { getRequestHeaders } from '../../../script.js';
 
 console.log('API配置管理器扩展导入完成');
 
@@ -405,8 +404,8 @@ function bindEvents() {
     });
 }
 
-// 扩展初始化
-jQuery(async () => {
+// 扩展初始化函数
+async function initExtension() {
     console.log('API配置管理器扩展开始初始化...');
 
     initSettings();
@@ -422,4 +421,15 @@ jQuery(async () => {
     console.log('配置列表已渲染');
 
     console.log('API配置管理器扩展已加载完成');
+}
+
+// SillyTavern扩展初始化
+jQuery(async () => {
+    // 检查是否被禁用
+    if (extension_settings.disabledExtensions.includes(MODULE_NAME)) {
+        console.log('API配置管理器扩展已被禁用');
+        return;
+    }
+
+    await initExtension();
 });
