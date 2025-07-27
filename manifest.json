@@ -1,0 +1,12 @@
+{
+    "display_name": "API Config Manager",
+    "loading_order": 50,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Lorenzzz-Elio",
+    "version": "1.0.0",
+    "homePage": "https://github.com/Lorenzzz-Elio/api-config-manager",
+    "description": "A SillyTavern extension for managing multiple API configurations with quick switching capabilities."
+}

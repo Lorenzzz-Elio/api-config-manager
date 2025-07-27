@@ -1,0 +1,27 @@
+# 忽略用户配置数据
+*.config
+*.settings
+user-data/
+
+# 忽略临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# 忽略IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 忽略日志文件
+*.log
+logs/
+
+# 忽略node_modules（如果有）
+node_modules/
+
+# 忽略构建输出
+dist/
+build/
