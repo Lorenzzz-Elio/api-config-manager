@@ -1,5 +1,54 @@
 /* API配置管理器样式 */
 
+/* 确保在所有主题下的可见性 */
+.api_config_settings *,
+#api-config-manager * {
+    box-sizing: border-box;
+}
+
+/* 强制按钮在白色主题下可见 */
+.api_config_settings .menu_button,
+#api-config-manager .menu_button {
+    position: relative;
+    z-index: 1;
+    transition: all 0.2s ease;
+}
+
+/* 白色主题适配 */
+@media (prefers-color-scheme: light),
+body[data-theme="white"],
+body.white-theme,
+.white-theme {
+    .api-config-apply {
+        background: #28a745 !important;
+        border: 1px solid #1e7e34 !important;
+    }
+
+    .api-config-apply:hover {
+        background: #218838 !important;
+        border: 1px solid #1c7430 !important;
+    }
+
+    #api-config-save {
+        background: #28a745 !important;
+        border: 1px solid #1e7e34 !important;
+    }
+
+    #api-config-save:hover {
+        background: #218838 !important;
+        border: 1px solid #1c7430 !important;
+    }
+
+    .api-config-item {
+        border: 1px solid #dee2e6 !important;
+        background: #f8f9fa !important;
+    }
+
+    .api-config-name {
+        color: #212529 !important;
+    }
+}
+
 .api_config_settings {
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 5px;
@@ -85,16 +134,18 @@
 }
 
 .api-config-apply {
-    background: var(--SmartThemeCheckboxBgColor) !important;
+    background: var(--SmartThemeCheckboxBgColor, #28a745) !important;
     color: white !important;
     border: none !important;
     padding: 4px 8px !important;
     font-size: 12px !important;
     min-width: 50px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .api-config-apply:hover {
-    background: var(--SmartThemeCheckboxBgColorHover) !important;
+    background: var(--SmartThemeCheckboxBgColorHover, #218838) !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 .api-config-delete {
@@ -104,10 +155,12 @@
     padding: 4px 8px !important;
     font-size: 12px !important;
     min-width: 50px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .api-config-delete:hover {
     background: #c82333 !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 .api-config-edit {
@@ -117,10 +170,12 @@
     padding: 4px 8px !important;
     font-size: 12px !important;
     min-width: 50px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .api-config-edit:hover {
     background: #138496 !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 .api-config-empty {
@@ -139,15 +194,17 @@
 }
 
 #api-config-save {
-    background: var(--SmartThemeCheckboxBgColor) !important;
+    background: var(--SmartThemeCheckboxBgColor, #28a745) !important;
     color: white !important;
     border: none !important;
     padding: 6px 12px !important;
     white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 #api-config-save:hover {
-    background: var(--SmartThemeCheckboxBgColorHover) !important;
+    background: var(--SmartThemeCheckboxBgColorHover, #218838) !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 #api-config-fetch-models {
@@ -157,10 +214,12 @@
     padding: 6px 12px !important;
     white-space: nowrap;
     font-size: 12px !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 #api-config-fetch-models:hover {
     background: #5a6268 !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 #api-config-model-select {
