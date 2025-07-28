@@ -3,7 +3,7 @@ console.log('API配置管理器扩展文件开始加载...');
 import { extension_settings, renderExtensionTemplateAsync } from '../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders } from '../../../script.js';
 import { SECRET_KEYS, writeSecret, findSecret, secret_state } from '../../secrets.js';
-import { oai_settings } from '../../openai.js';
+import { oai_settings } from '../../../openai.js';
 
 console.log('API配置管理器扩展导入完成');
 
