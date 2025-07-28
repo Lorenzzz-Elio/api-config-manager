@@ -9,7 +9,7 @@ const MODULE_NAME = 'api-config-manager';
 // 扩展信息
 const EXTENSION_INFO = {
     name: 'API配置管理器',
-    version: '1.2.0',
+    version: '1.2.2',
     author: 'Lorenzzz-Elio',
     repository: 'https://github.com/Lorenzzz-Elio/api-config-manager'
 };
@@ -245,6 +245,7 @@ function saveNewConfig() {
         toastr.success(`已更新配置: ${name}`, 'API配置管理器');
         editingIndex = -1; // 重置编辑状态
         $('#api-config-save').text('保存配置'); // 重置按钮文本
+        $('#api-config-cancel').hide(); // 隐藏取消按钮
     } else {
         // 检查是否已存在同名配置
         const existingIndex = extension_settings[MODULE_NAME].configs.findIndex(c => c.name === name);
@@ -466,6 +467,7 @@ function editConfig(index) {
     // 设置编辑模式
     editingIndex = index;
     $('#api-config-save').text('更新配置');
+    $('#api-config-cancel').show(); // 显示取消按钮
 
     // 滚动到表单顶部
     $('#api-config-name')[0].scrollIntoView({ behavior: 'smooth' });
@@ -474,6 +476,23 @@ function editConfig(index) {
     $('#api-config-name').focus();
 
     toastr.info(`正在编辑配置: ${config.name}`, 'API配置管理器');
+}
+
+// 取消编辑配置
+function cancelEditConfig() {
+    // 重置编辑状态
+    editingIndex = -1;
+    $('#api-config-save').text('保存配置');
+    $('#api-config-cancel').hide(); // 隐藏取消按钮
+
+    // 清空表单
+    $('#api-config-name').val('');
+    $('#api-config-url').val('');
+    $('#api-config-key').val('');
+    $('#api-config-model').val('');
+    $('#api-config-model-select').hide(); // 隐藏模型选择下拉框
+
+    toastr.info('已取消编辑，切换到新建配置模式', 'API配置管理器');
 }
 
 // 创建UI
@@ -504,14 +523,17 @@ async function createUI() {
                                 <input type="text" id="api-config-name" placeholder="配置名称 (例如: OpenAI GPT-4)" class="text_pole">
                                 <input type="text" id="api-config-url" placeholder="API URL (例如: https://api.openai.com/v1)" class="text_pole">
                                 <input type="password" id="api-config-key" placeholder="API密钥" class="text_pole">
-                                <div class="flex-container flexGap5">
+                                <div class="flex-container flexGap5 model-input-container">
                                     <input type="text" id="api-config-model" placeholder="首选模型 (可选，例如: gpt-4)" class="text_pole" style="flex: 1;">
                                     <button id="api-config-fetch-models" class="menu_button" style="white-space: nowrap;">获取模型</button>
                                 </div>
                                 <select id="api-config-model-select" class="text_pole" style="display: none;">
                                     <option value="">选择模型...</option>
                                 </select>
-                                <button id="api-config-save" class="menu_button">保存配置</button>
+                                <div class="flex-container flexGap5 button-container">
+                                    <button id="api-config-save" class="menu_button">保存配置</button>
+                                    <button id="api-config-cancel" class="menu_button" style="display: none; background-color: #dc3545;">❌ 取消</button>
+                                </div>
                             </div>
                             <small>输入配置信息，可以手动输入模型名或点击"获取模型"从API获取可用模型列表</small>
                         </div>
@@ -557,11 +579,18 @@ function bindEvents() {
     // 保存新配置
     $(document).on('click', '#api-config-save', saveNewConfig);
 
+    // 取消编辑配置
+    $(document).on('click', '#api-config-cancel', cancelEditConfig);
+
     // 获取模型列表
     $(document).on('click', '#api-config-fetch-models', fetchAvailableModels);
 
     // 更新扩展
-    $(document).on('click', '#api-config-update', async function() {
+    $(document).on('click', '#api-config-update', async function(e) {
+        // 阻止事件冒泡，避免触发父元素的展开折叠
+        e.stopPropagation();
+        e.preventDefault();
+
         try {
             const updateInfo = await checkExtensionStatus();
 

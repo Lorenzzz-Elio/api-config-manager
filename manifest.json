@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Lorenzzz-Elio",
-    "version": "1.2.0",
+    "version": "1.2.2",
     "homePage": "https://github.com/Lorenzzz-Elio/api-config-manager",
     "description": "A SillyTavern extension for managing multiple API configurations with quick switching capabilities."
 }

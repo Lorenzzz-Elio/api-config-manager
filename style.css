@@ -56,17 +56,65 @@
 
 .api-config-update-btn.update-available {
     background: #28a745 !important;
-    animation: pulse 2s infinite;
+    animation: api-config-pulse 2s infinite;
 }
 
 .api-config-update-btn.update-available:hover {
     background: #218838 !important;
 }
 
-@keyframes pulse {
+@keyframes api-config-pulse {
     0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
     70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
     100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+}
+
+/* 按钮容器样式 - 确保横向布局 */
+.api_config_settings .button-container {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 8px !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+}
+
+/* 模型输入容器样式 */
+.api_config_settings .model-input-container {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 8px !important;
+    align-items: center !important;
+}
+
+/* 保存按钮样式 */
+#api-config-save {
+    flex: 1 !important;
+    min-width: 100px !important;
+    white-space: nowrap !important;
+}
+
+/* 取消按钮样式 */
+#api-config-cancel {
+    background-color: #dc3545 !important;
+    color: white !important;
+    border: none !important;
+    padding: 8px 12px !important;
+    border-radius: 4px !important;
+    font-size: 13px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    white-space: nowrap !important;
+    min-width: 70px !important;
+    max-width: 80px !important;
+    flex-shrink: 0 !important;
+    height: auto !important;
+    line-height: 1.2 !important;
+}
+
+#api-config-cancel:hover {
+    background-color: #c82333 !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+    transform: translateY(-1px) !important;
 }
 
 /* 强制按钮在白色主题下可见 */
@@ -433,10 +481,17 @@ body.white-theme,
         font-size: 14px;
     }
 
-    /* 获取模型按钮在小屏幕上的处理 */
-    .api_config_settings .flex-container.flexGap5 {
-        flex-direction: column;
-        gap: 8px;
+    /* 获取模型按钮在小屏幕上的处理 - 只影响模型输入容器 */
+    .api_config_settings .model-input-container {
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+
+    /* 保存和取消按钮容器在小屏幕上仍保持横向布局 */
+    .api_config_settings .button-container {
+        flex-direction: row !important;
+        gap: 8px !important;
+        justify-content: flex-start !important;
     }
 
     #api-config-fetch-models {
