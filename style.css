@@ -6,6 +6,69 @@
     box-sizing: border-box;
 }
 
+/* 头部样式 */
+.api-config-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-right: 10px;
+}
+
+.api-config-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.api-config-version {
+    font-size: 0.8em;
+    opacity: 0.7;
+    font-weight: normal;
+    background: rgba(0, 123, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--SmartThemeEmColor, #007bff);
+}
+
+.api-config-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.api-config-update-btn {
+    background: #17a2b8 !important;
+    color: white !important;
+    border: none !important;
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+    min-width: 32px;
+    height: 24px;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+}
+
+.api-config-update-btn:hover {
+    background: #138496 !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.api-config-update-btn.update-available {
+    background: #28a745 !important;
+    animation: pulse 2s infinite;
+}
+
+.api-config-update-btn.update-available:hover {
+    background: #218838 !important;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+}
+
 /* 强制按钮在白色主题下可见 */
 .api_config_settings .menu_button,
 #api-config-manager .menu_button {
@@ -371,7 +434,7 @@ body.white-theme,
     }
 
     /* 获取模型按钮在小屏幕上的处理 */
-    .flex-container.flexGap5 {
+    .api_config_settings .flex-container.flexGap5 {
         flex-direction: column;
         gap: 8px;
     }
