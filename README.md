@@ -138,7 +138,7 @@ api-config-manager/
 ## 注意事项
 
 1. **安全性**: API密钥以明文形式存储在本地设置中，请确保设备安全
-2. **兼容性**: 目前仅支持Custom OpenAI API配置字段
+2. **兼容性**: 支持Custom (OpenAI兼容)、Google AI Studio (MakerSuite)
 3. **备份**: 建议定期备份SillyTavern设置以防配置丢失
 
 ## 版本信息

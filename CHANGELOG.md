@@ -1,5 +1,18 @@
 # API配置管理器 更新日志
 
+## v1.3.0 (2025-12-20)
+
+### 新功能
+- **Google AI Studio (MakerSuite)**: 支持保存/一键切换 Google AI Studio 配置（可选反代 `reverse_proxy` + `proxy_password`）
+
+### 界面改进
+- **主题跟随**: UI 显示效果更贴合酒馆主题与布局
+
+### 修复
+- **Secret 复用**: 复用并轮换（rotate）已有 secret，避免每次操作都新增 secret 导致数量持续增多
+
+---
+
 ## v1.2.2 (2025-01-28)
 
 ### 🐛 修复

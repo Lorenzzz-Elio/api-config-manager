@@ -1,15 +1,40 @@
 import { extension_settings, renderExtensionTemplateAsync } from '../../../../../scripts/extensions.js';
 import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders } from '../../../../../script.js';
-import { SECRET_KEYS, writeSecret, findSecret, secret_state } from '../../../../../scripts/secrets.js';
+import { SECRET_KEYS, writeSecret, findSecret, rotateSecret, readSecretState, secret_state } from '../../../../../scripts/secrets.js';
 import { oai_settings } from '../../../../../scripts/openai.js';
 
 // 扩展名称
 const MODULE_NAME = 'api-config-manager';
 
+const CHAT_COMPLETION_SOURCES = {
+    CUSTOM: 'custom',
+    MAKERSUITE: 'makersuite',
+};
+
+const SOURCE_LABELS = {
+    [CHAT_COMPLETION_SOURCES.CUSTOM]: 'Custom (OpenAI兼容)',
+    [CHAT_COMPLETION_SOURCES.MAKERSUITE]: 'Google AI Studio',
+};
+
+const SOURCE_MODEL_SELECTORS = {
+    [CHAT_COMPLETION_SOURCES.CUSTOM]: '#model_custom_select',
+    [CHAT_COMPLETION_SOURCES.MAKERSUITE]: '#model_google_select',
+};
+
+const SOURCE_MODEL_SETTING_KEYS = {
+    [CHAT_COMPLETION_SOURCES.CUSTOM]: 'custom_model',
+    [CHAT_COMPLETION_SOURCES.MAKERSUITE]: 'google_model',
+};
+
+const SOURCE_SECRET_KEYS = {
+    [CHAT_COMPLETION_SOURCES.CUSTOM]: SECRET_KEYS.CUSTOM,
+    [CHAT_COMPLETION_SOURCES.MAKERSUITE]: SECRET_KEYS.MAKERSUITE,
+};
+
 // 扩展信息
 const EXTENSION_INFO = {
     name: 'API配置管理器',
-    version: '1.2.2',
+    version: '1.3.0',
     author: 'Lorenzzz-Elio',
     repository: 'https://github.com/Lorenzzz-Elio/api-config-manager'
 };
@@ -22,6 +47,123 @@ const defaultSettings = {
 // 编辑状态
 let editingIndex = -1;
 
+async function findExistingSecretIdByValue(key, value) {
+    const secrets = Array.isArray(secret_state?.[key]) ? secret_state[key] : [];
+
+    for (const secret of secrets) {
+        if (!secret?.id) continue;
+        if (typeof secret.value === 'string' && secret.value === value) {
+            return secret.id;
+        }
+    }
+
+    // If secret values are masked, trying to read every entry would be very slow.
+    // Only attempt server-side reads if we can read at least one secret value.
+    const probeId = secrets.find(s => s?.id)?.id;
+    if (!probeId) return null;
+    const probeValue = await findSecret(key, probeId);
+    if (!probeValue) return null;
+
+    for (const secret of secrets) {
+        if (!secret?.id) continue;
+        const realValue = await findSecret(key, secret.id);
+        if (realValue && realValue === value) {
+            return secret.id;
+        }
+    }
+
+    return null;
+}
+
+async function ensureSecretActive(key, value, label) {
+    if (!value) return null;
+
+    if (!secret_state || Object.keys(secret_state).length === 0) {
+        await readSecretState();
+    }
+
+    const existingId = await findExistingSecretIdByValue(key, value);
+    if (existingId) {
+        await rotateSecret(key, existingId);
+        return existingId;
+    }
+
+    return await writeSecret(key, value, label);
+}
+
+function normalizeSource(source) {
+    if (source === CHAT_COMPLETION_SOURCES.MAKERSUITE) return CHAT_COMPLETION_SOURCES.MAKERSUITE;
+    return CHAT_COMPLETION_SOURCES.CUSTOM;
+}
+
+function getSourceLabel(source) {
+    const normalized = normalizeSource(source);
+    if (normalized !== source && source) {
+        return `Unsupported (${source})`;
+    }
+    return SOURCE_LABELS[normalized] || SOURCE_LABELS[CHAT_COMPLETION_SOURCES.CUSTOM];
+}
+
+function getModelSelectSelector(source) {
+    return SOURCE_MODEL_SELECTORS[normalizeSource(source)] || SOURCE_MODEL_SELECTORS[CHAT_COMPLETION_SOURCES.CUSTOM];
+}
+
+function setChatCompletionSource(source) {
+    const normalized = normalizeSource(source);
+    $('#chat_completion_source').val(normalized).trigger('change');
+    if (typeof oai_settings !== 'undefined') {
+        oai_settings.chat_completion_source = normalized;
+    }
+}
+
+function setReverseProxyFields(reverseProxy, proxyPassword) {
+    if (reverseProxy !== undefined) {
+        $('#openai_reverse_proxy').val(reverseProxy ?? '').trigger('input');
+        if (typeof oai_settings !== 'undefined') {
+            oai_settings.reverse_proxy = reverseProxy ?? '';
+        }
+    }
+
+    if (proxyPassword !== undefined) {
+        $('#openai_proxy_password').val(proxyPassword ?? '').trigger('input');
+        if (typeof oai_settings !== 'undefined') {
+            oai_settings.proxy_password = proxyPassword ?? '';
+        }
+    }
+}
+
+async function setSourceSecretIfProvided(source, configName, value, config) {
+    const normalized = normalizeSource(source);
+    const secretKey = SOURCE_SECRET_KEYS[normalized];
+    if (!secretKey || !value) return;
+
+    const label = `ACM: ${configName || getSourceLabel(normalized)}`;
+
+    if (!secret_state || Object.keys(secret_state).length === 0) {
+        await readSecretState();
+    }
+
+    const knownId =
+        (config?.secretIds && typeof config.secretIds === 'object' && config.secretIds[secretKey]) ||
+        (normalized === CHAT_COMPLETION_SOURCES.CUSTOM ? config?.secretId : null);
+
+    const secrets = Array.isArray(secret_state?.[secretKey]) ? secret_state[secretKey] : [];
+    const hasKnownSecret = knownId ? secrets.some(s => s?.id === knownId) : false;
+
+    if (hasKnownSecret) {
+        await rotateSecret(secretKey, knownId);
+        return;
+    }
+
+    const id = await ensureSecretActive(secretKey, value, label);
+    if (!id) return;
+
+    if (!config.secretIds || typeof config.secretIds !== 'object') {
+        config.secretIds = {};
+    }
+    config.secretIds[secretKey] = id;
+}
+
 // 初始化扩展设置
 function initSettings() {
     if (!extension_settings[MODULE_NAME]) {
@@ -31,6 +173,28 @@ function initSettings() {
     // 确保configs数组存在
     if (!extension_settings[MODULE_NAME].configs) {
         extension_settings[MODULE_NAME].configs = [];
+    }
+
+    // 兼容旧配置结构
+    for (const config of extension_settings[MODULE_NAME].configs) {
+        if (!config || typeof config !== 'object') continue;
+
+        if (!config.source) {
+            config.source = CHAT_COMPLETION_SOURCES.CUSTOM;
+        }
+
+        if (config.source === CHAT_COMPLETION_SOURCES.CUSTOM) {
+            if (config.customUrl === undefined && typeof config.url === 'string') {
+                config.customUrl = config.url;
+            }
+            if (typeof config.customUrl === 'string') {
+                config.url = config.customUrl;
+            }
+        }
+
+        if (config.secretId && (!config.secretIds || typeof config.secretIds !== 'object')) {
+            config.secretIds = { [SECRET_KEYS.CUSTOM]: config.secretId };
+        }
     }
 }
 
@@ -45,28 +209,41 @@ async function getCurrentApiConfig() {
 // 应用配置到表单
 async function applyConfig(config) {
     try {
-        // 设置URL
-        $('#custom_api_url_text').val(config.url).trigger('input');
-
-        // 通过secrets系统设置密钥
-        if (config.key) {
-            await writeSecret(SECRET_KEYS.CUSTOM, config.key);
-            // 触发input事件以更新UI状态
-            $('#api_key_custom').trigger('input');
+        if (!$('#api_button_openai').length || !$('#chat_completion_source').length) {
+            throw new Error('未找到API连接界面元素，请在OpenAI/Chat Completions设置页使用此扩展');
         }
+
+        const rawSource = typeof config?.source === 'string' ? config.source : CHAT_COMPLETION_SOURCES.CUSTOM;
+        if (rawSource && ![CHAT_COMPLETION_SOURCES.CUSTOM, CHAT_COMPLETION_SOURCES.MAKERSUITE].includes(rawSource)) {
+            toastr.error(`该配置的来源“${rawSource}”已不再受此扩展支持，请编辑配置并改为Custom/Google AI Studio`, 'API配置管理器');
+            return;
+        }
+
+        const source = normalizeSource(rawSource);
+        setChatCompletionSource(source);
+
+        if (source === CHAT_COMPLETION_SOURCES.CUSTOM) {
+            const customUrl = (typeof config.customUrl === 'string' ? config.customUrl : config.url) || '';
+            $('#custom_api_url_text').val(customUrl).trigger('input');
+            if (typeof oai_settings !== 'undefined') {
+                oai_settings.custom_url = customUrl;
+            }
+        } else if (source === CHAT_COMPLETION_SOURCES.MAKERSUITE) {
+            setReverseProxyFields(config.reverseProxy, config.proxyPassword);
+        }
+
+        // 通过secrets系统设置密钥（仅在配置里填写了key时覆盖/激活）
+        await setSourceSecretIfProvided(source, config.name, config.key, config);
 
         // 保存设置
         saveSettingsDebounced();
 
         // 显示应用成功消息
-        toastr.success(`正在连接到: ${config.name}`, 'API配置管理器');
+        toastr.success(`正在连接到: ${config.name}（${getSourceLabel(source)}）`, 'API配置管理器');
 
-        // 如果有指定模型，先设置模型名到输入框
+        // 如果有指定模型，先尝试设置（连接完成后会再次尝试自动选中）
         if (config.model) {
-            $('#custom_model_id').val(config.model).trigger('input');
-            if (typeof oai_settings !== 'undefined') {
-                oai_settings.custom_model = config.model;
-            }
+            setPreferredModel(config.model, config.name, source);
         }
 
         // 自动重新连接
@@ -74,7 +251,7 @@ async function applyConfig(config) {
 
         // 监听连接状态变化，连接成功后立即设置模型
         if (config.model) {
-            waitForConnectionAndSetModel(config.model, config.name);
+            waitForConnectionAndSetModel(config.model, config.name, source);
         }
 
     } catch (error) {
@@ -84,7 +261,7 @@ async function applyConfig(config) {
 }
 
 // 智能等待连接并设置模型
-function waitForConnectionAndSetModel(modelName, configName) {
+function waitForConnectionAndSetModel(modelName, configName, source) {
     let attempts = 0;
     const maxAttempts = 20; // 最多尝试20次，每次500ms，总共10秒
 
@@ -92,12 +269,12 @@ function waitForConnectionAndSetModel(modelName, configName) {
         attempts++;
 
         // 检查是否已连接（通过检查模型下拉列表是否有选项）
-        const modelSelect = $('#model_custom_select');
+        const modelSelect = $(getModelSelectSelector(source));
         const hasModels = modelSelect.find('option').length > 1; // 除了默认选项外还有其他选项
 
         if (hasModels) {
             // 连接成功，设置模型
-            setPreferredModel(modelName, configName);
+            setPreferredModel(modelName, configName, source);
             return;
         }
 
@@ -106,7 +283,7 @@ function waitForConnectionAndSetModel(modelName, configName) {
             setTimeout(checkConnection, 500);
         } else {
             // 超时，但仍然尝试设置模型
-            setPreferredModel(modelName, configName);
+            setPreferredModel(modelName, configName, source);
         }
     };
 
@@ -115,18 +292,30 @@ function waitForConnectionAndSetModel(modelName, configName) {
 }
 
 // 设置首选模型
-function setPreferredModel(modelName, configName) {
+function setPreferredModel(modelName, configName, source) {
     try {
-        // 首先设置到custom_model_id（这是用户输入的模型名）
-        $('#custom_model_id').val(modelName).trigger('input');
+        const normalized = normalizeSource(source);
 
-        // 同时更新oai_settings
+        // 更新oai_settings
         if (typeof oai_settings !== 'undefined') {
-            oai_settings.custom_model = modelName;
+            const settingKey = SOURCE_MODEL_SETTING_KEYS[normalized];
+            if (settingKey) {
+                oai_settings[settingKey] = modelName;
+            }
+        }
+
+        if (normalized === CHAT_COMPLETION_SOURCES.CUSTOM) {
+            $('#custom_model_id').val(modelName).trigger('input');
         }
 
         // 检查下拉列表中是否有该模型
-        const modelSelect = $('#model_custom_select');
+        const modelSelect = $(getModelSelectSelector(normalized));
+        if (!modelSelect.length) {
+            toastr.info(`已设置首选模型: ${modelName}（未找到模型下拉框，连接后可用）`, 'API配置管理器');
+            saveSettingsDebounced();
+            return;
+        }
+
         const modelOption = modelSelect.find(`option[value="${modelName}"]`);
 
         if (modelOption.length > 0) {
@@ -134,8 +323,14 @@ function setPreferredModel(modelName, configName) {
             modelSelect.val(modelName).trigger('change');
             toastr.success(`已自动选择模型: ${modelName}`, 'API配置管理器');
         } else {
-            // 模型不在下拉列表中，但已设置到输入框
-            toastr.info(`已设置首选模型: ${modelName}（模型将在连接后可用）`, 'API配置管理器');
+            // 模型不在下拉列表中：允许手动输入的来源（尤其是Custom）可以临时注入选项以便生效
+            if (modelSelect.is('select')) {
+                modelSelect.append(`<option value="${modelName}">${modelName}</option>`);
+                modelSelect.val(modelName).trigger('change');
+                toastr.success(`已设置模型: ${modelName}（手动添加）`, 'API配置管理器');
+            } else {
+                toastr.info(`已设置首选模型: ${modelName}（模型将在连接后可用）`, 'API配置管理器');
+            }
         }
 
         // 保存设置
@@ -149,11 +344,15 @@ function setPreferredModel(modelName, configName) {
 
 // 获取可用模型列表
 async function fetchAvailableModels() {
-    const url = $('#api-config-url').val().trim();
-    const key = $('#api-config-key').val().trim();
+    const source = normalizeSource($('#api-config-source').val());
 
-    if (!url) {
-        toastr.error('请先输入API URL', 'API配置管理器');
+    const customUrl = $('#api-config-url').val().trim();
+    const apiKey = $('#api-config-key').val().trim();
+    const reverseProxy = $('#api-config-reverse-proxy').val().trim();
+    const proxyPassword = $('#api-config-proxy-password').val().trim();
+
+    if (source === CHAT_COMPLETION_SOURCES.CUSTOM && !customUrl) {
+        toastr.error('请先输入Custom API URL', 'API配置管理器');
         return;
     }
 
@@ -162,16 +361,26 @@ async function fetchAvailableModels() {
     button.text('获取中...').prop('disabled', true);
 
     try {
-        // 临时设置API密钥到secrets系统（如果提供了密钥）
-        if (key) {
-            await writeSecret(SECRET_KEYS.CUSTOM, key);
+        if (source === CHAT_COMPLETION_SOURCES.CUSTOM) {
+            if (apiKey) {
+                await ensureSecretActive(SECRET_KEYS.CUSTOM, apiKey, 'ACM: Fetch models (Custom)');
+            }
+        } else if (source === CHAT_COMPLETION_SOURCES.MAKERSUITE) {
+            if (!reverseProxy && apiKey) {
+                await ensureSecretActive(SECRET_KEYS.MAKERSUITE, apiKey, 'ACM: Fetch models (AI Studio)');
+            }
         }
 
-        // 使用SillyTavern的内置API端点获取模型列表
+        /** @type {any} */
         const requestData = {
-            custom_url: url,
-            chat_completion_source: 'custom' // 使用custom类型
+            chat_completion_source: source,
+            reverse_proxy: reverseProxy,
+            proxy_password: proxyPassword,
         };
+
+        if (source === CHAT_COMPLETION_SOURCES.CUSTOM) {
+            requestData.custom_url = customUrl;
+        }
 
         const response = await fetch('/api/backends/chat-completions/status', {
             method: 'POST',
@@ -218,8 +427,12 @@ async function fetchAvailableModels() {
 // 保存新配置（从用户输入）
 function saveNewConfig() {
     const name = $('#api-config-name').val().trim();
-    const url = $('#api-config-url').val().trim();
+    const source = normalizeSource($('#api-config-source').val());
+
+    const customUrl = $('#api-config-url').val().trim();
     const key = $('#api-config-key').val().trim();
+    const reverseProxy = $('#api-config-reverse-proxy').val().trim();
+    const proxyPassword = $('#api-config-proxy-password').val().trim();
     const model = $('#api-config-model').val().trim();
 
     if (!name) {
@@ -227,20 +440,44 @@ function saveNewConfig() {
         return;
     }
 
-    if (!url && !key) {
-        toastr.error('请至少输入URL或密钥', 'API配置管理器');
-        return;
+    if (source === CHAT_COMPLETION_SOURCES.CUSTOM) {
+        if (!customUrl && !key) {
+            toastr.error('Custom配置请至少输入URL或密钥', 'API配置管理器');
+            return;
+        }
+    } else if (source === CHAT_COMPLETION_SOURCES.MAKERSUITE) {
+        if (!reverseProxy && !key) {
+            toastr.info('未填写反代URL和密钥：将使用酒馆已保存的Google AI Studio密钥（如已配置）', 'API配置管理器');
+        }
     }
 
     const config = {
         name: name,
-        url: url,
+        source: source,
+        url: source === CHAT_COMPLETION_SOURCES.CUSTOM ? customUrl : undefined,
+        customUrl: source === CHAT_COMPLETION_SOURCES.CUSTOM ? customUrl : undefined,
         key: key,
-        model: model || undefined // 只有在有值时才保存model字段
+        reverseProxy: source === CHAT_COMPLETION_SOURCES.MAKERSUITE ? reverseProxy : undefined,
+        proxyPassword: source === CHAT_COMPLETION_SOURCES.MAKERSUITE ? proxyPassword : undefined,
+        model: model || undefined, // 只有在有值时才保存model字段
+        secretId: undefined,
+        secretIds: undefined,
     };
 
     if (editingIndex >= 0) {
         // 更新现有配置（编辑模式）
+        const previousConfig = extension_settings[MODULE_NAME].configs[editingIndex];
+        const secretKey = SOURCE_SECRET_KEYS[source];
+        const prevSource = normalizeSource(previousConfig?.source);
+        const prevSecretId =
+            (previousConfig?.secretIds && typeof previousConfig.secretIds === 'object' && secretKey ? previousConfig.secretIds[secretKey] : null) ||
+            (source === CHAT_COMPLETION_SOURCES.CUSTOM ? previousConfig?.secretId : null);
+
+        if (prevSecretId && previousConfig?.key === config.key && prevSource === source) {
+            config.secretId = previousConfig.secretId;
+            config.secretIds = previousConfig.secretIds;
+        }
+
         extension_settings[MODULE_NAME].configs[editingIndex] = config;
         toastr.success(`已更新配置: ${name}`, 'API配置管理器');
         editingIndex = -1; // 重置编辑状态
@@ -252,6 +489,18 @@ function saveNewConfig() {
 
         if (existingIndex >= 0) {
             // 更新现有配置
+            const previousConfig = extension_settings[MODULE_NAME].configs[existingIndex];
+            const secretKey = SOURCE_SECRET_KEYS[source];
+            const prevSource = normalizeSource(previousConfig?.source);
+            const prevSecretId =
+                (previousConfig?.secretIds && typeof previousConfig.secretIds === 'object' && secretKey ? previousConfig.secretIds[secretKey] : null) ||
+                (source === CHAT_COMPLETION_SOURCES.CUSTOM ? previousConfig?.secretId : null);
+
+            if (prevSecretId && previousConfig?.key === config.key && prevSource === source) {
+                config.secretId = previousConfig.secretId;
+                config.secretIds = previousConfig.secretIds;
+            }
+
             extension_settings[MODULE_NAME].configs[existingIndex] = config;
             toastr.success(`已更新配置: ${name}`, 'API配置管理器');
         } else {
@@ -265,9 +514,39 @@ function saveNewConfig() {
     $('#api-config-name').val('');
     $('#api-config-url').val('');
     $('#api-config-key').val('');
+    $('#api-config-reverse-proxy').val('');
+    $('#api-config-proxy-password').val('');
     $('#api-config-model').val('');
     $('#api-config-model-select').hide(); // 隐藏模型选择下拉框
+    updateFormBySource($('#api-config-source').val());
     renderConfigList();
+}
+
+function updateFormBySource(sourceValue) {
+    const source = normalizeSource(sourceValue);
+
+    const $customUrl = $('#api-config-url');
+    const $apiKey = $('#api-config-key');
+    const $reverseProxy = $('#api-config-reverse-proxy');
+    const $proxyPassword = $('#api-config-proxy-password');
+    const $fetchModels = $('#api-config-fetch-models');
+    const $hint = $('#api-config-source-hint');
+
+    if (source === CHAT_COMPLETION_SOURCES.CUSTOM) {
+        $customUrl.show().attr('placeholder', 'Custom API URL (例如: https://api.openai.com/v1)');
+        $apiKey.show().attr('placeholder', 'Custom API密钥 (可选)');
+        $reverseProxy.hide();
+        $proxyPassword.hide();
+        $fetchModels.prop('disabled', false);
+        $hint.text('Custom：使用OpenAI兼容接口（可用于反代OpenAI兼容服务）。');
+    } else if (source === CHAT_COMPLETION_SOURCES.MAKERSUITE) {
+        $customUrl.hide();
+        $apiKey.show().attr('placeholder', 'Google AI Studio API Key (可选；不填则使用酒馆已保存的密钥)');
+        $reverseProxy.show().attr('placeholder', '反代服务器URL (可选；留空使用默认)');
+        $proxyPassword.show().attr('placeholder', '反代密码/Key (可选；反代需要时填写)');
+        $fetchModels.prop('disabled', false);
+        $hint.text('Google AI Studio：支持直接Key或使用反代（reverse_proxy + proxy_password）。');
+    }
 }
 
 // 检查更新
@@ -434,10 +713,14 @@ function renderConfigList() {
     }
 
     configs.forEach((config, index) => {
+        const sourceLabel = getSourceLabel(config.source);
         const configItem = $(`
             <div class="api-config-item">
                 <div class="api-config-info">
-                    <div class="api-config-name">${config.name}</div>
+                    <div class="api-config-name">
+                        ${config.name}
+                        <span class="api-config-source-tag">${sourceLabel}</span>
+                    </div>
                     ${config.model ? `<div class="api-config-model">首选模型: ${config.model}</div>` : '<div class="api-config-no-model">未设置模型</div>'}
                 </div>
                 <div class="api-config-actions">
@@ -457,8 +740,11 @@ function editConfig(index) {
 
     // 填充表单
     $('#api-config-name').val(config.name);
-    $('#api-config-url').val(config.url || '');
+    $('#api-config-source').val(normalizeSource(config.source)).trigger('change');
+    $('#api-config-url').val((typeof config.customUrl === 'string' ? config.customUrl : config.url) || '');
     $('#api-config-key').val(config.key || '');
+    $('#api-config-reverse-proxy').val(config.reverseProxy || '');
+    $('#api-config-proxy-password').val(config.proxyPassword || '');
     $('#api-config-model').val(config.model || '');
 
     // 隐藏模型选择下拉框
@@ -489,8 +775,11 @@ function cancelEditConfig() {
     $('#api-config-name').val('');
     $('#api-config-url').val('');
     $('#api-config-key').val('');
+    $('#api-config-reverse-proxy').val('');
+    $('#api-config-proxy-password').val('');
     $('#api-config-model').val('');
     $('#api-config-model-select').hide(); // 隐藏模型选择下拉框
+    updateFormBySource($('#api-config-source').val());
 
     toastr.info('已取消编辑，切换到新建配置模式', 'API配置管理器');
 }
@@ -521,8 +810,14 @@ async function createUI() {
                             <h4>添加新配置</h4>
                             <div class="flex-container flexFlowColumn flexGap5">
                                 <input type="text" id="api-config-name" placeholder="配置名称 (例如: OpenAI GPT-4)" class="text_pole">
-                                <input type="text" id="api-config-url" placeholder="API URL (例如: https://api.openai.com/v1)" class="text_pole">
-                                <input type="password" id="api-config-key" placeholder="API密钥" class="text_pole">
+                                <select id="api-config-source" class="text_pole">
+                                    <option value="${CHAT_COMPLETION_SOURCES.CUSTOM}">Custom (OpenAI兼容)</option>
+                                    <option value="${CHAT_COMPLETION_SOURCES.MAKERSUITE}">Google AI Studio</option>
+                                </select>
+                                <input type="text" id="api-config-url" placeholder="Custom API URL (例如: https://api.openai.com/v1)" class="text_pole">
+                                <input type="password" id="api-config-key" placeholder="API密钥 (可选)" class="text_pole">
+                                <input type="text" id="api-config-reverse-proxy" placeholder="反代服务器URL (可选)" class="text_pole" style="display: none;">
+                                <input type="password" id="api-config-proxy-password" placeholder="反代密码/Token (可选)" class="text_pole" style="display: none;">
                                 <div class="flex-container flexGap5 model-input-container">
                                     <input type="text" id="api-config-model" placeholder="首选模型 (可选，例如: gpt-4)" class="text_pole" style="flex: 1;">
                                     <button id="api-config-fetch-models" class="menu_button" style="white-space: nowrap;">获取模型</button>
@@ -532,10 +827,10 @@ async function createUI() {
                                 </select>
                                 <div class="flex-container flexGap5 button-container">
                                     <button id="api-config-save" class="menu_button">保存配置</button>
-                                    <button id="api-config-cancel" class="menu_button" style="display: none; background-color: #dc3545;">❌ 取消</button>
+                                    <button id="api-config-cancel" class="menu_button" style="display: none;">❌ 取消</button>
                                 </div>
                             </div>
-                            <small>输入配置信息，可以手动输入模型名或点击"获取模型"从API获取可用模型列表</small>
+                            <small id="api-config-source-hint">Custom：使用OpenAI兼容接口（可用于反代OpenAI兼容服务）。</small>
                         </div>
                         <div class="api-config-section">
                             <h4>已保存的配置</h4>
@@ -584,6 +879,11 @@ function bindEvents() {
 
     // 获取模型列表
     $(document).on('click', '#api-config-fetch-models', fetchAvailableModels);
+
+    // 切换来源（更新表单展示）
+    $(document).on('change', '#api-config-source', function () {
+        updateFormBySource($(this).val());
+    });
 
     // 更新扩展
     $(document).on('click', '#api-config-update', async function(e) {
@@ -636,7 +936,7 @@ function bindEvents() {
     });
 
     // 回车保存配置
-    $(document).on('keypress', '#api-config-name, #api-config-url, #api-config-key, #api-config-model', function(e) {
+    $(document).on('keypress', '#api-config-name, #api-config-url, #api-config-key, #api-config-reverse-proxy, #api-config-proxy-password, #api-config-model', function(e) {
         if (e.which === 13) {
             saveNewConfig();
         }
@@ -648,6 +948,7 @@ async function initExtension() {
     initSettings();
     await createUI();
     bindEvents();
+    updateFormBySource($('#api-config-source').val());
     renderConfigList(); // 初始化时渲染配置列表
 
     // 延迟检查更新（避免影响扩展加载速度）
