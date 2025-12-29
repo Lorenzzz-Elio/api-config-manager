@@ -1,6 +1,15 @@
 import { extension_settings, renderExtensionTemplateAsync } from '../../../../../scripts/extensions.js';
 import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders } from '../../../../../script.js';
-import { SECRET_KEYS, writeSecret, findSecret, rotateSecret, readSecretState, secret_state } from '../../../../../scripts/secrets.js';
+import { SECRET_KEYS, writeSecret, findSecret, readSecretState, secret_state } from '../../../../../scripts/secrets.js';
+
+// Import rotateSecret if available (added in newer SillyTavern versions)
+let rotateSecret = null;
+try {
+    const secretsModule = await import('../../../../../scripts/secrets.js');
+    rotateSecret = secretsModule.rotateSecret || null;
+} catch (e) {
+    console.log('rotateSecret not available in this SillyTavern version');
+}
 import { oai_settings } from '../../../../../scripts/openai.js';
 
 // 扩展名称
@@ -34,14 +43,15 @@ const SOURCE_SECRET_KEYS = {
 // 扩展信息
 const EXTENSION_INFO = {
     name: 'API配置管理器',
-    version: '1.3.0',
+    version: '1.3.1',
     author: 'Lorenzzz-Elio',
     repository: 'https://github.com/Lorenzzz-Elio/api-config-manager'
 };
 
 // 默认设置
 const defaultSettings = {
-    configs: [] // 存储配置列表: [{name: string, url: string, key: string, model?: string}]
+    configs: [], // 存储配置列表: [{name: string, url: string, key: string, model?: string}]
+    collapsedGroups: {} // 存储折叠状态: {groupName: boolean}
 };
 
 // 编辑状态
@@ -84,7 +94,9 @@ async function ensureSecretActive(key, value, label) {
 
     const existingId = await findExistingSecretIdByValue(key, value);
     if (existingId) {
-        await rotateSecret(key, existingId);
+        if (rotateSecret) {
+            await rotateSecret(key, existingId);
+        }
         return existingId;
     }
 
@@ -151,7 +163,9 @@ async function setSourceSecretIfProvided(source, configName, value, config) {
     const hasKnownSecret = knownId ? secrets.some(s => s?.id === knownId) : false;
 
     if (hasKnownSecret) {
-        await rotateSecret(secretKey, knownId);
+        if (rotateSecret) {
+            await rotateSecret(secretKey, knownId);
+        }
         return;
     }
 
@@ -173,6 +187,11 @@ function initSettings() {
     // 确保configs数组存在
     if (!extension_settings[MODULE_NAME].configs) {
         extension_settings[MODULE_NAME].configs = [];
+    }
+
+    // 确保collapsedGroups对象存在
+    if (!extension_settings[MODULE_NAME].collapsedGroups) {
+        extension_settings[MODULE_NAME].collapsedGroups = {};
     }
 
     // 兼容旧配置结构
@@ -427,6 +446,7 @@ async function fetchAvailableModels() {
 // 保存新配置（从用户输入）
 function saveNewConfig() {
     const name = $('#api-config-name').val().trim();
+    const group = $('#api-config-group').val().trim();
     const source = normalizeSource($('#api-config-source').val());
 
     const customUrl = $('#api-config-url').val().trim();
@@ -453,6 +473,7 @@ function saveNewConfig() {
 
     const config = {
         name: name,
+        group: group || undefined,
         source: source,
         url: source === CHAT_COMPLETION_SOURCES.CUSTOM ? customUrl : undefined,
         customUrl: source === CHAT_COMPLETION_SOURCES.CUSTOM ? customUrl : undefined,
@@ -512,6 +533,7 @@ function saveNewConfig() {
 
     saveSettingsDebounced();
     $('#api-config-name').val('');
+    $('#api-config-group').val('');
     $('#api-config-url').val('');
     $('#api-config-key').val('');
     $('#api-config-reverse-proxy').val('');
@@ -712,25 +734,60 @@ function renderConfigList() {
         return;
     }
 
+    // 按分组组织配置
+    const grouped = {};
     configs.forEach((config, index) => {
-        const sourceLabel = getSourceLabel(config.source);
-        const configItem = $(`
-            <div class="api-config-item">
-                <div class="api-config-info">
-                    <div class="api-config-name">
-                        ${config.name}
-                        <span class="api-config-source-tag">${sourceLabel}</span>
-                    </div>
-                    ${config.model ? `<div class="api-config-model">首选模型: ${config.model}</div>` : '<div class="api-config-no-model">未设置模型</div>'}
-                </div>
-                <div class="api-config-actions">
-                    <button class="menu_button api-config-apply" data-index="${index}">应用</button>
-                    <button class="menu_button api-config-edit" data-index="${index}">编辑</button>
-                    <button class="menu_button api-config-delete" data-index="${index}">删除</button>
-                </div>
+        const groupName = config.group || '未分组';
+        if (!grouped[groupName]) {
+            grouped[groupName] = [];
+        }
+        grouped[groupName].push({ config, index });
+    });
+
+    // 渲染每个分组
+    Object.keys(grouped).sort().forEach(groupName => {
+        const groupItems = grouped[groupName];
+
+        const groupHeader = $(`
+            <div class="api-config-group-header" data-group="${groupName}">
+                <i class="fa-solid fa-chevron-down"></i>
+                <span>${groupName}</span>
+                <span class="api-config-group-count">(${groupItems.length})</span>
             </div>
         `);
-        container.append(configItem);
+
+        const groupContent = $('<div class="api-config-group-content"></div>');
+
+        groupItems.forEach(({ config, index }) => {
+            const sourceLabel = getSourceLabel(config.source);
+            const configItem = $(`
+                <div class="api-config-item">
+                    <div class="api-config-info">
+                        <div class="api-config-name">
+                            ${config.name}
+                            <span class="api-config-source-tag">${sourceLabel}</span>
+                        </div>
+                        ${config.model ? `<div class="api-config-model">首选模型: ${config.model}</div>` : '<div class="api-config-no-model">未设置模型</div>'}
+                    </div>
+                    <div class="api-config-actions">
+                        <button class="menu_button api-config-apply" data-index="${index}">应用</button>
+                        <button class="menu_button api-config-edit" data-index="${index}">编辑</button>
+                        <button class="menu_button api-config-delete" data-index="${index}">删除</button>
+                    </div>
+                </div>
+            `);
+            groupContent.append(configItem);
+        });
+
+        container.append(groupHeader);
+        container.append(groupContent);
+
+        // 应用保存的折叠状态
+        const isCollapsed = extension_settings[MODULE_NAME].collapsedGroups[groupName];
+        if (isCollapsed) {
+            groupContent.hide();
+            groupHeader.find('i').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+        }
     });
 }
 
@@ -740,6 +797,7 @@ function editConfig(index) {
 
     // 填充表单
     $('#api-config-name').val(config.name);
+    $('#api-config-group').val(config.group || '');
     $('#api-config-source').val(normalizeSource(config.source)).trigger('change');
     $('#api-config-url').val((typeof config.customUrl === 'string' ? config.customUrl : config.url) || '');
     $('#api-config-key').val(config.key || '');
@@ -773,6 +831,7 @@ function cancelEditConfig() {
 
     // 清空表单
     $('#api-config-name').val('');
+    $('#api-config-group').val('');
     $('#api-config-url').val('');
     $('#api-config-key').val('');
     $('#api-config-reverse-proxy').val('');
@@ -810,6 +869,7 @@ async function createUI() {
                             <h4>添加新配置</h4>
                             <div class="flex-container flexFlowColumn flexGap5">
                                 <input type="text" id="api-config-name" placeholder="配置名称 (例如: OpenAI GPT-4)" class="text_pole">
+                                <input type="text" id="api-config-group" placeholder="分组名称 (可选，例如: 工作用)" class="text_pole">
                                 <select id="api-config-source" class="text_pole">
                                     <option value="${CHAT_COMPLETION_SOURCES.CUSTOM}">Custom (OpenAI兼容)</option>
                                     <option value="${CHAT_COMPLETION_SOURCES.MAKERSUITE}">Google AI Studio</option>
@@ -883,6 +943,24 @@ function bindEvents() {
     // 切换来源（更新表单展示）
     $(document).on('change', '#api-config-source', function () {
         updateFormBySource($(this).val());
+    });
+
+    // 分组折叠/展开
+    $(document).on('click', '.api-config-group-header', function() {
+        const header = $(this);
+        const groupName = header.data('group');
+        const content = header.next('.api-config-group-content');
+        const icon = header.find('i');
+
+        // 在动画前检测当前状态
+        const willBeCollapsed = content.is(':visible');
+
+        content.slideToggle(200);
+        icon.toggleClass('fa-chevron-down fa-chevron-right');
+
+        // 保存折叠状态
+        extension_settings[MODULE_NAME].collapsedGroups[groupName] = willBeCollapsed;
+        saveSettingsDebounced();
     });
 
     // 更新扩展

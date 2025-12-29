@@ -139,16 +139,60 @@
     font-size: 14px;
 }
 
+.api-config-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    margin: 12px 0 0 0;
+    background: var(--SmartThemeBotMesBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 600;
+    color: var(--SmartThemeEmColor);
+}
+
+.api-config-group-header:hover {
+    background: var(--SmartThemeUserMesBlurTintColor);
+    border-color: var(--SmartThemeEmColor);
+}
+
+.api-config-group-header i {
+    transition: transform 0.2s ease;
+    font-size: 12px;
+}
+
+.api-config-group-count {
+    font-size: 12px;
+    opacity: 0.7;
+    font-weight: normal;
+}
+
+.api-config-group-content {
+    margin-bottom: 8px;
+}
+
 .api-config-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 12px;
     margin: 8px 0;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 6px;
+    border: 2px solid var(--SmartThemeBorderColor);
+    border-left: 4px solid var(--SmartThemeEmColor);
+    border-radius: 8px;
     background: var(--SmartThemeUserMesBlurTintColor, var(--SmartThemeBlurTintColor));
-    box-shadow: 0 2px 4px var(--SmartThemeShadowColor);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.api-config-item:hover {
+    border-color: var(--SmartThemeEmColor);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    transform: translateY(-2px);
 }
 
 .api-config-info {
